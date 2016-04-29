@@ -10,6 +10,8 @@ from lxml import etree
 from httplib import BAD_REQUEST
 from flask import Flask, request, abort
 
+import patterns
+
 app = Flask(__name__)
 appPath = '/papuwx/' if __name__=='__main__' else '/'
 print appPath
@@ -55,16 +57,22 @@ def processMessage():
 	return processText(**{x:e.findtext(x) for x in
 					   'ToUserName FromUserName CreateTime Content Recognition'.split()})
 
+
 def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
-	if Content is None:
-		Content = Recognition
+	if Content is None: Content = Recognition
 	Content = re.sub('[,，。!！?？]', '', Content.strip())
+	if Content == '': return ''
+
+	for function in processText.functions:
+		replyText = function(FromUserName, Content)
+		if replyText is not None: break
+	else: return ''
 
 	replyDict = dict(FromUserName=ToUserName,
 					 ToUserName=FromUserName,
 					 CreateTime=CreateTime,
 					 MsgType='text',
-					 Content='myreply')
+					 Content=replyText)
 
 	reply = etree.Element('xml')
 	for k,v in replyDict.iteritems():
@@ -75,6 +83,43 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 	x = etree.tostring(reply, encoding='utf8')
 	print 'returning', x
 	return x
+
+
+def message(patternEntry):
+	def decorate(func):
+		def newFunc(userId, message):
+			try:
+				result = patternEntry(message)
+				if result is None: return
+				if result.__class__ in [tuple,list]:
+					return func(userId, *result)
+				else:
+					return func(userId, result)
+			except ValueError as e:
+				return e.message
+		processText.func_dict.setdefault('functions',[]).append(newFunc)
+		return newFunc
+	return decorate
+
+
+@message(patterns.reservation)
+def processReservation(userId, start, end):
+	return 'reserving %s, %s, %s' % (userId, start, end)
+
+
+@message(patterns.cancellation)
+def processCancellation(userId, time):
+	return 'cancelling %s, %s' % (userId, time)
+
+
+@message(patterns.queryMyself)
+def processQueryMyself(userId):
+	return 'querying myself=%s' % userId
+
+@message(patterns.query)
+def processQuery(userId, start, end):
+	return 'querying %s, %s, %s' % (userId, start, end)
+
 
 if __name__=='__main__':
 	app.run(debug=True, host='::', port=80)
