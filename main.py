@@ -9,13 +9,26 @@ from lxml import etree
 
 from httplib import BAD_REQUEST
 from flask import Flask, request, abort
+from flask_sqlalchemy import SQLAlchemy
 
 import patterns
 
 app = Flask(__name__)
-appPath = '/papuwx/' if __name__=='__main__' else '/'
-print appPath
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
+class Message(db.Model):
+	id = db.Column(db.Integer, primary_key=True, autoincrement=False, nullable=False)
+	timestamp = db.Column(db.DateTime, default=datetime.datetime.now, nullable=False)
+
+	def __init__(self, id):
+		self.id = id
+
+	def __repr(self):
+		return '<Message %d at %s>' % (self.id, self.timestamp)
+
+appPath = '/papuwx/' if __name__=='__main__' else '/'
 @app.route(appPath, methods=['GET', 'POST'])
 def index():
 	for func in processes:
@@ -58,6 +71,14 @@ def processMessage():
 					   'ToUserName FromUserName CreateTime Content Recognition'.split()})
 
 
+def randomEmoji():
+	available = [(0x1f31a,0x1f31e), (0x1f646,0x1f64f)]
+	pos = random.randrange(sum(x[1]-x[0]+1 for x in available))
+	for x in available:
+		if pos < x[1]-x[0]+1:
+			return ('\\U%08x' % (x[0]+pos)).decode('unicode-escape')
+		pos -= x[1]-x[0]+1
+
 def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 	if Content is None: Content = Recognition
 	Content = re.sub('[,，。!！?？]', '', Content.strip())
@@ -66,7 +87,8 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 	for function in processText.functions:
 		replyText = function(FromUserName, Content)
 		if replyText is not None: break
-	else: return ''
+	else:
+		replyText = randomEmoji()
 
 	replyDict = dict(FromUserName=ToUserName,
 					 ToUserName=FromUserName,
@@ -122,4 +144,5 @@ def processQuery(userId, start, end):
 
 
 if __name__=='__main__':
-	app.run(debug=True, host='::', port=80)
+	db.create_all()
+	#app.run(debug=True, host='::', port=80)
