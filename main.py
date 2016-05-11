@@ -377,18 +377,20 @@ def processQuery(start, end):
 	# 暂时只处理单日查询
 	assert end-start <= datetime.timedelta(days=1)
 
-	reservations = [(x.start, '{} {}:{:02}~{}:{:02} {}'.format(x.user.name, x.start.hour,
+	reservations = [(x.start, x.room.id,
+		'{} {}:{:02}~{}:{:02} {}'.format(x.user.name, x.start.hour,
 		x.start.minute, x.end.hour, x.end.minute, x.room.name))
 		for x in overlayedReservation(start, end)]
-	courses = [(x.startTime, '{}* {}:{:02}~{}:{:02} {}'.format(x.teacher.name, x.startTime.hour,
+	courses = [(datetime.datetime.combine(start.date(), x.startTime), x.room.id,
+		'{}* {}:{:02}~{}:{:02} {}'.format(x.teacher.name, x.startTime.hour,
 		x.startTime.minute, x.endTime.hour, x.endTime.minute, x.room.name))
 		for x in overlayedCourse(start, end)]
 	date = '{}年{}月{}日'.format(start.year, start.month, start.day)
 	result = reservations + courses
 	if len(result)==0:
 		return '{}没有预约'.format(date)
-	result.sort(key=lambda x:x[0])
-	result =  '{}：\n{}'.format(date, '\n'.join(x[1] for x in result))
+	result.sort(key=lambda x:x[:2])
+	result =  '{}：\n{}'.format(date, '\n'.join(x[2] for x in result))
 	if len(courses)>0:
 		result += '\n\n(*) 钢琴课'
 	return result
@@ -405,6 +407,40 @@ def initDb():
 	B253 = Room(name='B253')
 	db.session.add(B252)
 	db.session.add(B253)
+
+	#legacy db
+	legacyName = 'db.legacy'
+	try: os.remove(legacyName)
+	except OSError: pass
+	print 'fetching legacy db ...'
+	statusCode = os.system('scp hsw@115.159.82.217:/var/www/papuwx/db.sqlite3 {}'.format(legacyName))
+	if statusCode != 0:
+		raise RuntimeError('error while fetching legacy db')
+	conn = sqlite3.connect(legacyName)
+
+	#legacy users
+	curs = conn.cursor()
+	curs.execute('SELECT id,openid,name FROM users_person')
+	users = {}
+	for theId, openId, name in curs:
+		user = User(openId=openId, name=name)
+		users[theId] = user
+		db.session.add(user)
+	
+	#legacy reservations
+	curs=conn.cursor()
+	curs.execute('SELECT start,end,person_id FROM appointment_appointment')
+	practiceRoom, classRoom = Room.query.order_by(Room.id)
+	for start, end, personId in curs:
+		user = users[personId]
+		start = datetime.datetime.strptime(start, '%Y-%m-%d %H:%M:%S')
+		end = datetime.datetime.strptime(end, '%Y-%m-%d %H:%M:%S')
+		reservation = Reservation(user=user, start=start, end=end, room=practiceRoom)
+		db.session.add(reservation)
+
+	conn.close()
+	try: os.remove(legacyName)
+	except OSError: pass
 
 	#course
 	for line in open('courses.txt'):
@@ -428,35 +464,15 @@ def initDb():
 			show = Show(performer=user)
 			db.session.add(show)
 
-
-	#legacy db
-	print 'fetching legacy db ...'
-	statusCode = os.system('scp hsw@115.159.82.217:/var/www/papuwx/db.sqlite3 db.legacy')
-	if statusCode != 0:
-		raise RuntimeError('error while fetching legacy db')
-	conn = sqlite3.connect('db.legacy')
-	curs = conn.cursor()
-	curs.execute('SELECT id,openid,name FROM users_person WHERE comfirm=1')
-	users = {}
-	for theId, openId, name in curs:
-		user = User(openId=openid, name=name)
-		users[theId] = user
-		db.session.add(user)
-	
-	curs=conn.cursor()
-	curs.execute('SELECT start,end,person_id FROM appointment_appointment')
-	for start, end, personId in curs:
-		u
-
 	db.session.commit()
 
 
 def getCreateUser(name):
-	user = User.query.filter_by(name=performerName).first()
+	user = User.query.filter_by(name=name).first()
 	if user is None:
-		user = User(name=performerName)
+		user = User(name=name)
 		db.session.add(user)
-		db.sesson.commit()
+		db.session.commit()
 	return user
 
 
