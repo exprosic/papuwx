@@ -21,6 +21,8 @@ import patterns
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['PROPAGATE_EXCEPTIONS'] = True
+
 wxToken = 'bigchord'
 db = SQLAlchemy(app)
 
@@ -106,6 +108,7 @@ class Show(db.Model):
 appPath = '/papuwx/' if __name__=='__main__' else '/'
 @app.route(appPath, methods=['GET', 'POST'])
 def index():
+	print request
 	for func in processes:
 		result = func()
 		if result is not None:
