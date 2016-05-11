@@ -110,6 +110,7 @@ appPath = '/papuwx/' if __name__=='__main__' else '/'
 def index():
 	print request
 	for func in processes:
+		print func
 		result = func()
 		if result is not None:
 			return result
