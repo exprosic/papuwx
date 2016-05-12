@@ -1,5 +1,5 @@
+#!/usr/bin/python3
 # vim: set noet ts=4 sw=4 fileencoding=utf-8:
-from __future__ import unicode_literals
 
 import os
 import sys
@@ -10,7 +10,7 @@ import datetime
 import sqlite3
 from lxml import etree
 
-from httplib import BAD_REQUEST
+from http.client import BAD_REQUEST
 from flask import Flask, request, abort, g
 from flask_sqlalchemy import SQLAlchemy
 #from flask.ext.script import Manager
@@ -31,7 +31,7 @@ class Message(db.Model):
 	msgId = db.Column(db.Integer(), primary_key=True, autoincrement=False)
 	timestamp = db.Column(db.DateTime(), default=datetime.datetime.now, nullable=False)
 	def __repr__(self):
-		return '<Message {} at {}>'.format(self.msgId, self.timestamp).encode('utf8')
+		return '<Message {} at {}>'.format(self.msgId, self.timestamp)
 
 
 class User(db.Model):
@@ -39,7 +39,7 @@ class User(db.Model):
 	openId = db.Column(db.String(), unique=True, nullable=True) #null一般为手动录入但没登记的老师
 	name = db.Column(db.String(), nullable=False)
 	def __repr__(self):
-		return '<User {} {}>'.format(self.openId, self.name).encode('utf8')
+		return '<User {} {}>'.format(self.openId, self.name)
 
 
 class Registration(db.Model):
@@ -47,14 +47,14 @@ class Registration(db.Model):
 	openId = db.Column(db.String(), unique=True, nullable=False)
 	name = db.Column(db.String(), nullable=False)
 	def __repr__(self):
-		return '<Registration {} {}>'.format(self.openId, self.name).encode('utf8')
+		return '<Registration {} {}>'.format(self.openId, self.name)
 
 
 class Room(db.Model):
 	id = db.Column(db.Integer(), primary_key=True)
 	name = db.Column(db.String(collation='NOCASE'), unique=True, nullable=False)
 	def __repr__(self):
-		return '<Room {}>'.format(self.name).encode('utf8')
+		return '<Room {}>'.format(self.name)
 
 
 class Reservation(db.Model):
@@ -66,7 +66,10 @@ class Reservation(db.Model):
 	start = db.Column(db.DateTime(), nullable=False)
 	end = db.Column(db.DateTime(), nullable=False)
 	def __repr__(self):
-		return '{} {}'.format(self.user.name, self.getDateRoom()).encode('utf8')
+		print(1)
+		'哈哈'
+		print(2)
+		return '{} {}'.format(self.user.name, self.getDateRoom())
 
 	def getDateRoom(self):
 		return '{}年{}月{}日 {}:{:02}~{}:{:02} {}'.format(
@@ -94,7 +97,7 @@ class Course(db.Model):
 				self.endDate.month, self.endDate.day,
 				'周一 周二 周三 周四 周五 周六 周日'.split()[self.weekday],
 				self.startTime.hour, self.startTime.minute,
-				self.endTime.hour, self.endTime.minute).encode('utf8')
+				self.endTime.hour, self.endTime.minute)
 
 
 class Show(db.Model):
@@ -102,15 +105,14 @@ class Show(db.Model):
 	performerId = db.Column(db.Integer(), db.ForeignKey('user.id'), nullable=False)
 	performer = db.relation('User', backref=db.backref('shows', lazy='dynamic'))
 	def __repr__(self):
-		return '<Show {}>'.format(self.performer).encode('utf8')
+		return '<Show {}>'.format(self.performer)
 
 
 appPath = '/papuwx/' if __name__=='__main__' else '/'
 @app.route(appPath, methods=['GET', 'POST'])
 def index():
-	print request
+	print(request)
 	for func in processes:
-		print func
 		result = func()
 		if result is not None:
 			return result
@@ -127,7 +129,7 @@ def authenticateMessage():
 	'验证是否是从微信服务器发来的请求'
 	try:
 		s = ''.join(sorted([wxToken, request.args['timestamp'], request.args['nonce']]))
-		if hashlib.sha1(s).hexdigest() == request.args['signature']:
+		if hashlib.sha1(s.encode('ascii')).hexdigest() == request.args['signature']:
 			#succeeded, pass through
 			return None
 	except KeyError:
@@ -166,7 +168,7 @@ def randomEmoji():
 	pos = random.randrange(sum(x[1]-x[0]+1 for x in available))
 	for x in available:
 		if pos < x[1]-x[0]+1:
-			return '\\U{:08x}'.format(x[0]+pos).decode('unicode-escape')
+			return chr(x[0]+pos)
 		pos -= x[1]-x[0]+1
 
 
@@ -184,8 +186,7 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 		else:
 			replyText = randomEmoji()
 	except MyException as e:
-		if e.message=='': return ''
-		replyText = e.message
+		replyText = e.args[0]
 
 	replyDict = dict(FromUserName=ToUserName,
 					 ToUserName=FromUserName,
@@ -194,7 +195,7 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 					 Content=replyText)
 
 	reply = etree.Element('xml')
-	for k,v in replyDict.iteritems():
+	for k,v in replyDict.items():
 		element = etree.Element(k)
 		element.text = v
 		reply.append(element)
@@ -214,8 +215,9 @@ def message(patternEntry):
 				else:
 					return func(result)
 			except ValueError as e:
-				return e.message
-		processText.func_dict.setdefault('functions',[]).append(newFunc)
+				print(e)
+				return e.args[0]
+		processText.__dict__.setdefault('functions',[]).append(newFunc)
 		return newFunc
 	return decorate
 
@@ -270,7 +272,7 @@ def processRegistration(name):
 	if registration is None:
 		db.session.add(Registration(openId=g.openId, name=name))
 		db.session.commit()
-		return '请再输入一次。请注意，一旦设置后不可更改。'
+		return '您即将设置姓名为 {}。请再输入一次，请注意，一旦设置后不可更改。'.format(name)
 	elif registration.name != name:
 		db.session.delete(registration)
 		db.session.commit()
@@ -298,7 +300,7 @@ def getRoom(roomName):
 @message(patterns.reservation)
 @authenticated
 def processReservation(start, end, roomName):
-	if 1 and not queryExist(g.user.shows):
+	if 1 and not queryExist(g.user.shows) and not queryExist(g.user.courses):
 		return '抱歉，在5月21日演奏会之前，只有演员可以预约'
 
 	#活跃预约数不超过2
@@ -311,12 +313,11 @@ def processReservation(start, end, roomName):
 	if (end-start).seconds > 2*3600:
 		return '抱歉，单次预约时长不能超过 2 个小时。'
 
-	if roomName is not None:
-		getRoom(roomName)
+	room = None if roomName is None else getRoom(roomName)
 	practiceRoom, classRoom = Room.query.order_by(Room.id)
 
 	for x in [0]:
-		if roomName is None or roomName.lower() == practiceRoom.name.lower():
+		if room is None or room==practiceRoom:
 			isIdle = not queryExist(overlayedReservation(start, end, practiceRoom))
 			if isIdle:
 				reservation = Reservation(user=g.user, room=practiceRoom, start=start, end=end)
@@ -324,11 +325,11 @@ def processReservation(start, end, roomName):
 				db.session.commit()
 				break
 
-		if roomName is None or roomName.lower() == classRoom.name.lower():
+		if room is None or room==classRoom:
 			#在本学期有课还没上完的时候，只有老师可以预约两天之后的classRoom
 			if not ((queryExist(g.user.courses) #是老师
 				or (start.date()-datetime.datetime.now().date()).days <= 2)):
-				return '抱歉，只有教课的老师可以预约超过 2 天之后的 {}'.format(roomName)
+				return '抱歉，只有教课的老师可以预约超过 2 天之后的 {}'.format(classRoom.name)
 
 			#没有课
 			isIdle = not queryExist(overlayedCourse(start,end))
@@ -341,9 +342,14 @@ def processReservation(start, end, roomName):
 				db.session.commit()
 				break
 	else:
-		return '此时段预约已满' if roomName is None else '此时段的 {} 预约已满'.format(roomName)
+		if room is None: return '此时段预约已满'
+		else: return '此时段的 {} 预约已满'.format(room.name)
 
-	return '您已预约 {}'.format(reservation.getDateRoom())
+	result = '您已预约 {}'.format(reservation.getDateRoom())
+	t1,t2 = datetime.time(hour=8), datetime.time(hour=22, minute=30)
+	if not (t1<=reservation.start.time()<=t2 and t1<=reservation.end.time()<=t2):
+		result += '\n警告：此时段琴房不太可能开'
+	return result
 
 
 @message(patterns.cancellation)
@@ -361,7 +367,7 @@ def processCancellation(time, roomName):
 				'琴房' if roomName is None else roomName)
 	reservations.delete()
 	db.session.commit()
-	return '您已取消{}{}'.format('\n'[:len(resultList)==1], '\n'.join(resultList))
+	return '您已取消{}{}'.format('\n'*(len(resultList)>1), '\n'.join(resultList))
 
 
 @message(patterns.queryMyself)
@@ -372,7 +378,7 @@ def processQueryMyself():
 	resultList = [r.getDateRoom() for r in reservations]
 	if len(resultList)==0:
 		return '您目前没有预约'
-	return '您的预约:{}{}'.format('\n'[:len(resultList)==1], '\n'.join(resultList))
+	return '您的预约:{}{}'.format('\n'*(len(resultList)>1), '\n'.join(resultList))
 
 
 @message(patterns.query)
@@ -381,11 +387,11 @@ def processQuery(start, end):
 	# 暂时只处理单日查询
 	assert end-start <= datetime.timedelta(days=1)
 
-	reservations = [(x.start, x.room.id,
+	reservations = [((x.start.time(), x.end.time(), x.room.id),
 		'{} {}:{:02}~{}:{:02} {}'.format(x.user.name, x.start.hour,
 		x.start.minute, x.end.hour, x.end.minute, x.room.name))
 		for x in overlayedReservation(start, end)]
-	courses = [(datetime.datetime.combine(start.date(), x.startTime), x.room.id,
+	courses = [((x.startTime, x.endTime, x.room.id),
 		'{}* {}:{:02}~{}:{:02} {}'.format(x.teacher.name, x.startTime.hour,
 		x.startTime.minute, x.endTime.hour, x.endTime.minute, x.room.name))
 		for x in overlayedCourse(start, end)]
@@ -393,8 +399,8 @@ def processQuery(start, end):
 	result = reservations + courses
 	if len(result)==0:
 		return '{}没有预约'.format(date)
-	result.sort(key=lambda x:x[:2])
-	result =  '{}：\n{}'.format(date, '\n'.join(x[2] for x in result))
+	result.sort(key=lambda x:x[0])
+	result =  '{}：\n{}'.format(date, '\n'.join(x[1] for x in result))
 	if len(courses)>0:
 		result += '\n\n(*) 钢琴课'
 	return result
@@ -416,7 +422,7 @@ def initDb():
 	legacyName = 'db.legacy'
 	try: os.remove(legacyName)
 	except OSError: pass
-	print 'fetching legacy db ...'
+	print('fetching legacy db ...')
 	statusCode = os.system('scp hsw@115.159.82.217:/var/www/papuwx/db.sqlite3 {}'.format(legacyName))
 	if statusCode != 0:
 		raise RuntimeError('error while fetching legacy db')
@@ -484,9 +490,9 @@ if __name__=='__main__':
 	if len(sys.argv)==2 and sys.argv[1]=='init':
 		if raw_input("All data will be deleted. Are you sure? ")=='yes':
 			initDb()
-			print 'done'
+			print('done')
 		else:
-			print 'aborted'
+			print('aborted')
 	else:
 		#Manager(app).run()
 		app.run(debug=True, host='::', port=80)

@@ -1,6 +1,5 @@
 # vim: set noet ts=4 sw=4 fileencoding=utf-8:
 
-from __future__ import unicode_literals
 import re
 
 dependsRev = {}

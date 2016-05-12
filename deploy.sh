@@ -1,5 +1,5 @@
 #!/bin/bash
 
-git push
+sudo cp *.py *.ini *.sh *.txt /var/www/papuwx
 cd /var/www/papuwx
-sudo -u nginx git pull
+sudo chown nginx:nginx -R .

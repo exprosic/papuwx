@@ -1,6 +1,5 @@
+#!/usr/bin/python3
 # vim: set noet ts=4 sw=4 fileencoding=utf-8:
-
-from __future__ import unicode_literals
 
 import re
 import datetime
@@ -24,13 +23,14 @@ def prefix(prefixPat):
 
 
 @prefix(r'预约')
-@pattern(r'^#(date:date)\
+@pattern(r'^#(date:date)?\
 		   #(time:time1)\
 		   #(to)\
 		   #(time:time2)\
 		   (?:的#(roomName:roomName))?$')
 def reservation(result, date, time1, time2, roomName):
 	'返回(开始datetime, 结束datetime)'
+	date = date or datetime.date.today()
 	if not time1['time']<time2['time']:
 		# 如果是“下午三点到五点”（此时time1.hour==15, time2.hour==5）
 		# 将其调整为15点到17点
@@ -41,18 +41,22 @@ def reservation(result, date, time1, time2, roomName):
 		if not (time1['time']<time2['time'] and
 				time1['section'][0]<=time2['time']<=time1['section'][1]):
 			raise MyValueError(result)
-	return (datetime.datetime.combine(date, time1['time']),
+	result = (datetime.datetime.combine(date, time1['time']),
 			datetime.datetime.combine(date, time2['time']),
 			roomName)
+	if result[0] < datetime.datetime.now():
+		raise ValueError('不能预约过去的时间')
+	return result
 
 
 @prefix(r'取消预约|取消')
-@pattern(r'^#(date:date)\
+@pattern(r'^#(date:date)?\
 		    #(time:time)\
 			(?:#(to)#(time))?\
 			(?:的#(roomName:roomName))?$')
 def cancellation(result, date, time, roomName):
 	'即便提供了结束时间，也将其忽略'
+	date = date or datetime.date.today()
 	return (datetime.datetime.combine(date, time['time']), roomName)
 
 
@@ -286,7 +290,7 @@ if __name__=='__main__':
 	#s = query('查询明天晚上')
 	s = iAm('我是3')
 	#s = roomName('B252')
-	print s
+	print(s)
 	#for k,v in processor.ExtPattern.collection.iteritems():
 	#	try: re.compile(v.calcPattern())
 	#	except: print k
