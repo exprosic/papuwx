@@ -66,9 +66,6 @@ class Reservation(db.Model):
 	start = db.Column(db.DateTime(), nullable=False)
 	end = db.Column(db.DateTime(), nullable=False)
 	def __repr__(self):
-		print(1)
-		'哈哈'
-		print(2)
 		return '{} {}'.format(self.user.name, self.getDateRoom())
 
 	def getDateRoom(self):
@@ -111,7 +108,6 @@ class Show(db.Model):
 appPath = '/papuwx/' if __name__=='__main__' else '/'
 @app.route(appPath, methods=['GET', 'POST'])
 def index():
-	print(request)
 	for func in processes:
 		result = func()
 		if result is not None:
@@ -215,7 +211,6 @@ def message(patternEntry):
 				else:
 					return func(result)
 			except ValueError as e:
-				print(e)
 				return e.args[0]
 		processText.__dict__.setdefault('functions',[]).append(newFunc)
 		return newFunc
@@ -387,20 +382,26 @@ def processQuery(start, end):
 	# 暂时只处理单日查询
 	assert end-start <= datetime.timedelta(days=1)
 
-	reservations = [((x.start.time(), x.end.time(), x.room.id),
-		'{} {}:{:02}~{}:{:02} {}'.format(x.user.name, x.start.hour,
-		x.start.minute, x.end.hour, x.end.minute, x.room.name))
+	reservations = [((x.room.id, x.start.time(), x.end.time()),
+		'{:02}:{:02}~{:02}:{:02} {}'.format(x.start.hour, x.start.minute,
+			x.end.hour, x.end.minute, x.user.name))
 		for x in overlayedReservation(start, end)]
-	courses = [((x.startTime, x.endTime, x.room.id),
-		'{}* {}:{:02}~{}:{:02} {}'.format(x.teacher.name, x.startTime.hour,
-		x.startTime.minute, x.endTime.hour, x.endTime.minute, x.room.name))
+	courses = [((x.room.id, x.startTime, x.endTime),
+		'{:02}:{:02}~{:02}:{:02} {}*'.format(x.startTime.hour, x.startTime.minute,
+			x.endTime.hour, x.endTime.minute, x.teacher.name))
 		for x in overlayedCourse(start, end)]
 	date = '{}年{}月{}日'.format(start.year, start.month, start.day)
-	result = reservations + courses
-	if len(result)==0:
+
+	resultList = reservations + courses
+	if len(resultList)==0:
 		return '{}没有预约'.format(date)
-	result.sort(key=lambda x:x[0])
-	result =  '{}：\n{}'.format(date, '\n'.join(x[1] for x in result))
+
+	resultList.sort(key=lambda x:x[0])
+	result = '{}：'.format(date)
+	for i,x in enumerate(resultList):
+		if i==0 or x[0][0]!=resultList[i-1][0][0]:
+			result += '\n'*(i>0) + '\n[{}]'.format(Room.query.get(x[0][0]).name)
+		result += '\n{}'.format(x[1])
 	if len(courses)>0:
 		result += '\n\n(*) 钢琴课'
 	return result
@@ -454,7 +455,7 @@ def initDb():
 
 	#course
 	for line in open('courses.txt'):
-		weekday, startHour, endHour, teacherName = line.decode('utf-8').split()
+		weekday, startHour, endHour, teacherName = line.split()
 		weekday = '周一 周二 周三 周四 周五 周六 周日'.split().index(weekday)
 		startTime = datetime.time(hour=int(startHour))
 		endTime = datetime.time(hour=int(endHour))
@@ -468,7 +469,7 @@ def initDb():
 
 	#show
 	for line in open('performers.txt'):
-		performerNames = line.decode('utf-8').split()
+		performerNames = line.split()
 		for performerName in performerNames:
 			user = getCreateUser(performerName)
 			show = Show(performer=user)
