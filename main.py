@@ -142,6 +142,7 @@ def checkEcho():
 
 @process
 def processMessage():
+	print(request.data)
 	try: e = etree.fromstring(request.data)
 	except etree.XMLSyntaxError: abort(BAD_REQUEST)
 
@@ -168,36 +169,66 @@ def randomEmoji():
 		pos -= x[1]-x[0]+1
 
 
+def toEtree(d, name='xml'):
+	e = etree.Element(name)
+	if not isinstance(d, dict):
+		e.text = d
+	else:
+		for k,v in d.items():
+			e.append(toEtree(v, name=k))
+	return e
+
+
 def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
-	if Content is None: Content = Recognition
-	Content = re.sub('[,，。!！?？]', '', Content.strip())
-	if Content == '': return ''
-
 	g.openId = FromUserName
-
 	try:
 		for function in processText.functions:
-			replyText = function(Content)
-			if replyText is not None: break
+			replyDict = function(Content)
+			if replyDict is not None: break
 		else:
-			replyText = randomEmoji()
+			replyDict = dict(MsgType='text', Content=randomEmoji())
 	except MyException as e:
-		replyText = e.args[0]
+		replyDict = dict(MsgType='text', Content=e.args[0])
 
-	replyDict = dict(FromUserName=ToUserName,
-					 ToUserName=FromUserName,
-					 CreateTime=CreateTime,
-					 MsgType='text',
-					 Content=replyText)
-
-	reply = etree.Element('xml')
+	reply = toEtree(dict(FromUserName=ToUserName, ToUserName=FromUserName, CreateTime=CreateTime))
 	for k,v in replyDict.items():
-		element = etree.Element(k)
-		element.text = v
-		reply.append(element)
+		reply.append(toEtree(v, name=k))
+	result = etree.tostring(reply, encoding='utf8')
+	print(result)
+	return result
 
-	x = etree.tostring(reply, encoding='utf8')
-	return x
+
+def newTextFunc(func):
+	processText.__dict__.setdefault('functions',[]).append(func)
+	return func
+
+
+@newTextFunc
+def randMusic(Content):
+	if not Content.startswith('.music'): return
+	url = 'http://weixincourse-weixincourse.stor.sinaapp.com/mysongs.mp3'
+	return {'MsgType':'music', 'Music':{
+		'Title':'TheTitle',
+		'Description':'TheDescription',
+		'MusicUrl':url,
+		'HQMusicUrl':url,
+		}}
+
+
+def newTextToText(func):
+	def newFunc(Content):
+		Content = re.sub('[,，。!！?？]', '', Content.strip())
+		if Content == '': return ''
+		replyText = func(Content)
+		if replyText is None: return
+		return dict(MsgType='text', Content=replyText)
+	return newTextFunc(newFunc)
+
+
+@newTextToText
+def processCommand(message):
+	if message.startswith('.'):
+		return '<a href="about:blank">blah</a>'
 
 
 def message(patternEntry):
@@ -212,8 +243,7 @@ def message(patternEntry):
 					return func(result)
 			except ValueError as e:
 				return e.args[0]
-		processText.__dict__.setdefault('functions',[]).append(newFunc)
-		return newFunc
+		return newTextToText(newFunc)
 	return decorate
 
 
