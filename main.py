@@ -13,7 +13,8 @@ from lxml import etree
 from http.client import BAD_REQUEST
 from flask import Flask, request, abort, g
 from flask_sqlalchemy import SQLAlchemy
-#from flask.ext.script import Manager
+from flask_script import Manager
+from flask_migrate import Migrate, MigrateCommand
 from sqlalchemy.exc import IntegrityError
 
 import patterns
@@ -105,6 +106,14 @@ class Show(db.Model):
 		return '<Show {}>'.format(self.performer)
 
 
+class OnlineMusic(db.Model):
+	id = db.Column(db.Integer(), primary_key=True)
+	title = db.Column(db.String(), nullable=True)
+	url = db.Column(db.String(), nullable=False)
+	def __repr__(self):
+		return '<OnlineMusic {} {}>'.format(self.title, self.url)
+
+
 appPath = '/papuwx/' if __name__=='__main__' else '/'
 @app.route(appPath, methods=['GET', 'POST'])
 def index():
@@ -146,15 +155,15 @@ def processMessage():
 	try: e = etree.fromstring(request.data)
 	except etree.XMLSyntaxError: abort(BAD_REQUEST)
 
+	if e.findtext('MsgType') not in ('text','voice'):
+		return
+
 	try:
 		db.session.add(Message(msgId=int(e.findtext('MsgId'))))
 		db.session.commit()
 	except IntegrityError:
 		#消息已处理，或者不存在MsgId
 		return ''
-
-	if e.findtext('MsgType') not in ('text','voice'):
-		return
 
 	return processText(**{x:e.findtext(x) for x in
 					   'ToUserName FromUserName CreateTime Content Recognition'.split()})
@@ -168,6 +177,11 @@ def randomEmoji():
 			return chr(x[0]+pos)
 		pos -= x[1]-x[0]+1
 
+
+def randomMusic():
+	n = OnlineMusic.query.count()
+	music = OnlineMusic.query[random.randrange(n)]
+	return music.url
 
 def toEtree(d, name='xml'):
 	e = etree.Element(name)
@@ -186,7 +200,8 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 			replyDict = function(Content)
 			if replyDict is not None: break
 		else:
-			replyDict = dict(MsgType='text', Content=randomEmoji())
+			replyDict = dict(MsgType='text',
+					Content='<a href="{}">{}</a>'.format(randomMusic(), randomEmoji()))
 	except MyException as e:
 		replyDict = dict(MsgType='text', Content=e.args[0])
 
@@ -204,9 +219,10 @@ def newTextFunc(func):
 
 
 @newTextFunc
-def randMusic(Content):
+def randMusicCommand(Content):
 	if not Content.startswith('.music'): return
-	url = 'http://weixincourse-weixincourse.stor.sinaapp.com/mysongs.mp3'
+	url = 'http://www.xiami.com/song/1770656657?spm=a1z1s.3521865.23309997.11.5KmuQs'
+	return {'MsgType':'text', 'Content':'<a href="{}">{}</a>'.format(url, randomEmoji())}
 	return {'MsgType':'music', 'Music':{
 		'Title':'TheTitle',
 		'Description':'TheDescription',
@@ -329,8 +345,8 @@ def processReservation(start, end, roomName):
 		return '抱歉，在5月21日演奏会之前，只有演员可以预约'
 
 	#活跃预约数不超过2
-	nActiveReservations = (db.session.query(db.func.count(Reservation.id)).filter_by(user=g.user)
-			.filter(Reservation.start>datetime.datetime.now())).scalar()
+	nActiveReservations = (Reservation.query.filter_by(user=g.user)
+			.filter(Reservation.start>datetime.datetime.now()).count())
 	if nActiveReservations >= 2:
 		return '抱歉，每人最多持有 2 个预约。如需添加新的预约，请取消至少一个预约。'
 
