@@ -14,7 +14,7 @@ def prefix(prefixPat):
 			if prefixMatch is None: return
 
 			start = prefixMatch.end()
-			result = entry(inputStr[start:])
+			result = entry(inputStr[start:].strip())
 			if result is None:
 				raise MyValueError(inputStr[start:])
 			return result
@@ -23,11 +23,11 @@ def prefix(prefixPat):
 
 
 @prefix(r'预约')
-@pattern(r'^#(date:date)?\
-		   #(time:time1)\
-		   #(to)\
-		   #(time:time2)\
-		   (?:的#(roomName:roomName))?$')
+@pattern(r'^#(date:date)?\s*\
+		   #(time:time1)\s*\
+		   #(to)\s*\
+		   #(time:time2)\s*\
+		   (?:[的\s]#(roomName:roomName))?$')
 def reservation(result, date, time1, time2, roomName):
 	'返回(开始datetime, 结束datetime)'
 	date = date or datetime.date.today()
@@ -50,10 +50,10 @@ def reservation(result, date, time1, time2, roomName):
 
 
 @prefix(r'取消预约|取消')
-@pattern(r'^#(date:date)?\
-		    #(time:time)\
-			(?:#(to)#(time))?\
-			(?:的#(roomName:roomName))?$')
+@pattern(r'^#(date:date)?\s*\
+		    #(time:time)\s*\
+			(?:#(to)\s*#(time)\s*)?\
+			(?:[的\s]#(roomName:roomName))?$')
 def cancellation(result, date, time, roomName):
 	'即便提供了结束时间，也将其忽略'
 	date = date or datetime.date.today()
@@ -75,9 +75,9 @@ def queryMyself(result):
 
 
 @prefix(r'我是')
-@pattern(r'^\S+$')
+@pattern(r'^\s*\S+$')
 def iAm(result):
-	return result
+	return result.strip()
 
 ##########################
 
@@ -165,7 +165,7 @@ def weekNum(result, number):
 @pattern(r'#(number:number)年')
 def year(result, number):
 	'未来十年内之内的年份，例如2016...2025'
-	if 0<=number-currentDate().year<10:
+	if not 0<=number-currentDate().year<10:
 		raise MyValueError(result)
 	return number
 

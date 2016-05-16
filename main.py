@@ -109,7 +109,7 @@ class Show(db.Model):
 class OnlineMusic(db.Model):
 	id = db.Column(db.Integer(), primary_key=True)
 	title = db.Column(db.String(), nullable=True)
-	url = db.Column(db.String(), nullable=False)
+	url = db.Column(db.String(), nullable=False, unique=True)
 	def __repr__(self):
 		return '<OnlineMusic {} {}>'.format(self.title, self.url)
 
@@ -233,9 +233,9 @@ def randMusicCommand(Content):
 
 def newTextToText(func):
 	def newFunc(Content):
-		Content = re.sub('[,，。!！?？]', '', Content.strip())
-		if Content == '': return ''
-		replyText = func(Content)
+		#Content = re.sub('[,，。!！?？]', '', Content.strip())
+		#if Content == '': return ''
+		replyText = func(Content.strip())
 		if replyText is None: return
 		return dict(MsgType='text', Content=replyText)
 	return newTextFunc(newFunc)
@@ -243,8 +243,18 @@ def newTextToText(func):
 
 @newTextToText
 def processCommand(message):
-	if message.startswith('.'):
-		return '<a href="about:blank">blah</a>'
+	if message.startswith('.addmusic'):
+		parts = message.split()
+		if parts[0]!='.addmusic' or len(parts)<3 or not parts[-1].startswith('http://'):
+			return
+		title = ' '.join(parts[1:-1])
+		url = parts[-1]
+		try:
+			db.session.add(OnlineMusic(title=title, url=url))
+			db.session.commit()
+		except IntegrityError:
+			return 'already existed'
+		return 'done'
 
 
 def message(patternEntry):
