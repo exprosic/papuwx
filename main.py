@@ -18,6 +18,7 @@ from flask_migrate import Migrate, MigrateCommand
 from sqlalchemy.exc import IntegrityError
 
 import patterns
+import music
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db'
@@ -185,11 +186,14 @@ def randomMusic():
 
 def toEtree(d, name='xml'):
 	e = etree.Element(name)
-	if not isinstance(d, dict):
-		e.text = d
-	else:
+	if isinstance(d, dict):
 		for k,v in d.items():
 			e.append(toEtree(v, name=k))
+	elif isinstance(d, tuple) or isinstance(d, list):
+		for k,v in d:
+			e.append(toEtree(v, name=k))
+	else:
+		e.text = str(d)
 	return e
 
 
@@ -200,8 +204,19 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 			replyDict = function(Content)
 			if replyDict is not None: break
 		else:
+			replyDict = dict(MsgType='news',
+					ArticleCount='2',
+					Articles=[('item', dict(Title='Brahms: Piano Trio No.1 in B, Op.8 - 1. Allegro con brio',
+						PicUrl='http://img.xiami.net/images/album/img58/23258/18298881051429888105.jpg',
+						Url='http://www.xiami.com/song/1774233114?spm=a1z1s.6659513.0.0.O4you9',
+						)),
+						('item', dict(Title='Brahms: Piano Trio No.1 in B, Op.8 - 1. Allegro con brio',
+						PicUrl='http://img.xiami.net/images/album/img58/23258/18298881051429888105.jpg',
+						Url='http://www.xiami.com/song/1774233114?spm=a1z1s.6659513.0.0.O4you9',
+						))])
 			replyDict = dict(MsgType='text',
 					Content='<a href="{}">{}</a>'.format(randomMusic(), randomEmoji()))
+			replyDict = recommendMusic()
 	except MyException as e:
 		replyDict = dict(MsgType='text', Content=e.args[0])
 
@@ -211,6 +226,20 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 	result = etree.tostring(reply, encoding='utf8')
 	print(result)
 	return result
+
+
+def recommendMusic():
+	tryCount = 10
+	nMusic = 3
+	musics = {}
+	for x in range(tryCount):
+		if len(musics)==nMusic: break
+		m = music.randomMusic()
+		musics[m['url']] = m
+	return dict(MsgType='news',
+			ArticleCount=len(musics),
+			Articles=[('item', dict(Title=m['title'], Url=m['url'], PicUrl=m['image']))
+				for m in musics.values()])
 
 
 def newTextFunc(func):
