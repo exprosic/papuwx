@@ -156,6 +156,13 @@ def processMessage():
 	try: e = etree.fromstring(request.data)
 	except etree.XMLSyntaxError: abort(BAD_REQUEST)
 
+	if e.findtext('MsgType').lower()=='event' and e.findtext('Event').lower()=='subscribe':
+		return etree.tostring(toEtree(dict(ToUserName=e.findtext('FromUserName'),
+			FromUserName=e.findtext('ToUserName'),
+			CreateTime=e.findtext('CreateTime'),
+			MsgType='text',
+			Content='欢迎关注钢琴社公众号\n（づ￣3￣）づ╭❤～')), encoding='utf8')
+
 	if e.findtext('MsgType') not in ('text','voice'):
 		return
 
@@ -204,19 +211,12 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 			replyDict = function(Content)
 			if replyDict is not None: break
 		else:
-			replyDict = dict(MsgType='news',
-					ArticleCount='2',
-					Articles=[('item', dict(Title='Brahms: Piano Trio No.1 in B, Op.8 - 1. Allegro con brio',
-						PicUrl='http://img.xiami.net/images/album/img58/23258/18298881051429888105.jpg',
-						Url='http://www.xiami.com/song/1774233114?spm=a1z1s.6659513.0.0.O4you9',
-						)),
-						('item', dict(Title='Brahms: Piano Trio No.1 in B, Op.8 - 1. Allegro con brio',
-						PicUrl='http://img.xiami.net/images/album/img58/23258/18298881051429888105.jpg',
-						Url='http://www.xiami.com/song/1774233114?spm=a1z1s.6659513.0.0.O4you9',
-						))])
-			replyDict = dict(MsgType='text',
-					Content='<a href="{}">{}</a>'.format(randomMusic(), randomEmoji()))
-			replyDict = recommendMusic()
+			if random.randrange(6)==0:
+				m = music.randomMusic()
+				replyDict = dict(MsgType='text',
+						Content='<a href="{}">{}</a>'.format(m['url'], randomEmoji()))
+			else:
+				replyDict = recommendMusic()
 	except MyException as e:
 		replyDict = dict(MsgType='text', Content=e.args[0])
 
