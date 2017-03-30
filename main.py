@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 import patterns
 import music
+from utils import *
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db'
@@ -157,6 +158,11 @@ def processMessage():
 	except etree.XMLSyntaxError: abort(BAD_REQUEST)
 
 	if e.findtext('MsgType').lower()=='event' and e.findtext('Event').lower()=='subscribe':
+		replyDict = dict(ToUserName=e.findtext('FromUserName'),
+			FromUserName=e.findtext('ToUserName'),
+			CreateTime=e.findtext('CreateTime'))
+		replyDict.update(recommendMusic())
+		return etree.tostring(toEtree(replyDict), encoding='utf8')
 		return etree.tostring(toEtree(dict(ToUserName=e.findtext('FromUserName'),
 			FromUserName=e.findtext('ToUserName'),
 			CreateTime=e.findtext('CreateTime'),
@@ -186,6 +192,15 @@ def randomEmoji():
 		pos -= x[1]-x[0]+1
 
 
+def randomEmojiLink(emoji=None, link=None):
+	if emoji is None:
+		emoji = randomEmoji()
+	if link is None:
+		m = music.randomMusic()
+		link = m['url']
+	return '<a href="{}">{}</a>'.format(link, emoji)
+
+
 def randomMusic():
 	n = OnlineMusic.query.count()
 	music = OnlineMusic.query[random.randrange(n)]
@@ -212,9 +227,8 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 			if replyDict is not None: break
 		else:
 			if random.randrange(6)==0:
-				m = music.randomMusic()
 				replyDict = dict(MsgType='text',
-						Content='<a href="{}">{}</a>'.format(m['url'], randomEmoji()))
+						Content=randomEmojiLink())
 			else:
 				replyDict = recommendMusic()
 	except MyException as e:
@@ -380,8 +394,11 @@ def getRoom(roomName):
 @message(patterns.reservation)
 @authenticated
 def processReservation(start, end, roomName):
-	if 1 and not queryExist(g.user.shows) and not queryExist(g.user.courses):
+	if 0 and not queryExist(g.user.shows) and not queryExist(g.user.courses):
 		return '抱歉，在5月21日演奏会之前，只有演员可以预约'
+
+	if 1 and (start.month,start.day)==(6,4):
+		return randomEmojiLink(emoji='\U0001F1E8\U0001F1F3', link='http://www.xiami.com/song/3598817')
 
 	#活跃预约数不超过2
 	nActiveReservations = (Reservation.query.filter_by(user=g.user)
@@ -394,16 +411,22 @@ def processReservation(start, end, roomName):
 		return '抱歉，单次预约时长不能超过 2 个小时。'
 
 	room = None if roomName is None else getRoom(roomName)
-	practiceRoom, classRoom = Room.query.order_by(Room.id)
+	classRoom = Room.query.filter_by(name='B253').first()
+	practiceRooms = [Room.query.filter_by(name=x).first() for x in ['B252', 'B250']]
 
 	for x in [0]:
-		if room is None or room==practiceRoom:
-			isIdle = not queryExist(overlayedReservation(start, end, practiceRoom))
-			if isIdle:
-				reservation = Reservation(user=g.user, room=practiceRoom, start=start, end=end)
-				db.session.add(reservation)
-				db.session.commit()
-				break
+		roomFound = False
+
+		for practiceRoom in practiceRooms:
+			if room is None or room==practiceRoom:
+				isIdle = not queryExist(overlayedReservation(start, end, practiceRoom))
+				if isIdle:
+					reservation = Reservation(user=g.user, room=practiceRoom, start=start, end=end)
+					db.session.add(reservation)
+					db.session.commit()
+					roomFound = True
+					break
+		if roomFound: break
 
 		if room is None or room==classRoom:
 			#在本学期有课还没上完的时候，只有老师可以预约两天之后的classRoom
@@ -428,7 +451,7 @@ def processReservation(start, end, roomName):
 	result = '您已预约 {}'.format(reservation.getDateRoom())
 	t1,t2 = datetime.time(hour=8), datetime.time(hour=22, minute=30)
 	if not (t1<=reservation.start.time()<=t2 and t1<=reservation.end.time()<=t2):
-		result += '\n警告：此时段琴房不太可能开'
+		result += '\n警告：此时段琴房可能不开'
 	return result
 
 
@@ -461,35 +484,72 @@ def processQueryMyself():
 	return '您的预约:{}{}'.format('\n'*(len(resultList)>1), '\n'.join(resultList))
 
 
+def queryOccupations(date):
+	start, end = toDatetime(date), toDatetime(date+datetime.timedelta(days=1))
+	reservations = [dict(
+		room = x.room.id,
+		start = x.start.time(),
+		end = x.end.time(),
+		repr = '{:02}:{:02}~{:02}:{:02} {}'.format(x.start.hour, x.start.minute,
+			x.end.hour, x.end.minute, x.user.name),
+		) for x in overlayedReservation(start, end)]
+
+	courses = [dict(
+		room = x.room.id,
+		start = x.startTime,
+		end = x.endTime,
+		repr = '{:02}:{:02}~{:02}:{:02} {}*'.format(x.startTime.hour, x.startTime.minute,
+			x.endTime.hour, x.endTime.minute, x.teacher.name)
+		) for x in overlayedCourse(start, end)]
+
+	return (reservations, courses)
+
+
+def formatDate(date):
+	return '{}年{}月{}日'.format(date.year, date.month, date.day)
+
+
+def formatReservation(date, reservations, courses):
+	dateRepr = formatDate(date)
+	resultList = reservations + courses
+	resultList.sort(key=lambda x:(x['room'], x['start'], x['end']))
+	resultRepr = '{}：'.format(dateRepr)
+	for i,x in enumerate(resultList):
+		if i==0 or x['room']!=resultList[i-1]['room']:
+			resultRepr += '\n'*(i>0) + '\n[{}]'.format(Room.query.get(x['room']).name)
+		resultRepr += '\n{}'.format(x['repr'])
+	return resultRepr
+
 @message(patterns.query)
 @authenticated
 def processQuery(start, end):
-	# 暂时只处理单日查询
-	assert end-start <= datetime.timedelta(days=1)
+	assert start.time() == end.time() == datetime.time()
 
-	reservations = [((x.room.id, x.start.time(), x.end.time()),
-		'{:02}:{:02}~{:02}:{:02} {}'.format(x.start.hour, x.start.minute,
-			x.end.hour, x.end.minute, x.user.name))
-		for x in overlayedReservation(start, end)]
-	courses = [((x.room.id, x.startTime, x.endTime),
-		'{:02}:{:02}~{:02}:{:02} {}*'.format(x.startTime.hour, x.startTime.minute,
-			x.endTime.hour, x.endTime.minute, x.teacher.name))
-		for x in overlayedCourse(start, end)]
-	date = '{}年{}月{}日'.format(start.year, start.month, start.day)
+	if 1 and start.date()==end.date() and (start.month,start.day)==(6,4):
+		return randomEmojiLink(emoji='\U0001F1E8\U0001F1F3', link='http://www.xiami.com/song/3598817')
 
-	resultList = reservations + courses
-	if len(resultList)==0:
-		return '{}没有预约'.format(date)
+	hasCourse = False
+	result = []
+	for i in range((end.date() - start.date()).days):
+		date = start.date() + datetime.timedelta(days=i)
+		reservations, courses = queryOccupations(date)
 
-	resultList.sort(key=lambda x:x[0])
-	result = '{}：'.format(date)
-	for i,x in enumerate(resultList):
-		if i==0 or x[0][0]!=resultList[i-1][0][0]:
-			result += '\n'*(i>0) + '\n[{}]'.format(Room.query.get(x[0][0]).name)
-		result += '\n{}'.format(x[1])
-	if len(courses)>0:
-		result += '\n\n(*) 钢琴课'
-	return result
+		if len(reservations) + len(courses) == 0:
+			continue
+
+		result.append(formatReservation(date, reservations, courses))
+		hasCourse = hasCourse or len(courses) > 0
+
+	if len(result)==0:
+		intervalRepr = formatDate(start.date())
+		if end.date()-start.date() != datetime.timedelta(days=1):
+			intervalRepr += '至' + formatDate(end.date())
+		return '{}没有预约'.format(intervalRepr)
+
+	if hasCourse:
+		result.append('(*) 钢琴课')
+
+	return '\n\n'.join(result)
 
 
 def initDb():
@@ -538,19 +598,7 @@ def initDb():
 	try: os.remove(legacyName)
 	except OSError: pass
 
-	#course
-	for line in open('courses.txt'):
-		weekday, startHour, endHour, teacherName = line.split()
-		weekday = '周一 周二 周三 周四 周五 周六 周日'.split().index(weekday)
-		startTime = datetime.time(hour=int(startHour))
-		endTime = datetime.time(hour=int(endHour))
-		startDate = datetime.date(year=2016, month=3, day=21)
-		endDate = datetime.date(year=2016, month=5, day=22)
-		teacher = getCreateUser(teacherName)
-		room = B253
-		course = Course(teacher=teacher, room=room, weekday=weekday,
-				startDate=startDate, endDate=endDate, startTime=startTime, endTime=endTime)
-		db.session.add(course)
+	refreshCourses()
 
 	#show
 	for line in open('performers.txt'):
@@ -563,22 +611,51 @@ def initDb():
 	db.session.commit()
 
 
+def refreshCourses():
+	B252 = getRoom('B252')
+	B253 = getRoom('B253')
+	Course.query.delete()
+	for line in open('courses.txt'):
+		weekday, startHour, endHour, teacherName = line.split()
+		print(weekday, startHour, endHour, teacherName)
+		weekday = '周一 周二 周三 周四 周五 周六 周日'.split().index(weekday)
+		startTime = datetime.time(hour=int(startHour))
+		endTime = datetime.time(hour=int(endHour))
+		startDate = datetime.date(year=2016, month=10, day=10)
+		endDate = datetime.date(year=2017, month=1, day=11)
+		teacher = getCreateUser(teacherName)
+		room = B253
+		course = Course(teacher=teacher, room=room, weekday=weekday,
+				startDate=startDate, endDate=endDate, startTime=startTime, endTime=endTime)
+		db.session.add(course)
+		db.session.commit()
+
 def getCreateUser(name):
-	user = User.query.filter_by(name=name).first()
+	print('getting', name)
+	user = User.query.filter_by(name=name)
+	print(user)
+	user = user.first()
 	if user is None:
 		user = User(name=name)
 		db.session.add(user)
 		db.session.commit()
+	print('got', name, user)
 	return user
 
 
 if __name__=='__main__':
 	if len(sys.argv)==2 and sys.argv[1]=='init':
-		if raw_input("All data will be deleted. Are you sure? ")=='yes':
+		if input("All data will be deleted. Are you sure? ")=='yes':
 			initDb()
 			print('done')
 		else:
 			print('aborted')
+	elif len(sys.argv)==2 and sys.argv[1]=='refreshcourses':
+		if input("Old courses will be deleted. Are you sure? ")=='yes':
+			refreshCourses()
+			print('done')
+		else:
+			print('aborted')
 	else:
-		#Manager(app).run()
-		app.run(debug=True, host='::', port=80)
+		Manager(app).run()
+		#app.run(debug=True, host='::', port=80)

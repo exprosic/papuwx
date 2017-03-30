@@ -5,6 +5,7 @@ import re
 import datetime
 
 from processor import pattern
+from utils import *
 
 
 def prefix(prefixPat):
@@ -23,7 +24,7 @@ def prefix(prefixPat):
 
 
 @prefix(r'预约')
-@pattern(r'^#(date:date)?\s*\
+@pattern(r'^(?:#(date:date)的?)?\s*\
 		   #(time:time1)\s*\
 		   #(to)\s*\
 		   #(time:time2)\s*\
@@ -50,7 +51,7 @@ def reservation(result, date, time1, time2, roomName):
 
 
 @prefix(r'取消预约|取消')
-@pattern(r'^#(date:date)?\s*\
+@pattern(r'^#(date:date)?的?\s*\
 		    #(time:time)\s*\
 			(?:#(to)\s*#(time)\s*)?\
 			(?:[的\s]#(roomName:roomName))?$')
@@ -60,12 +61,14 @@ def cancellation(result, date, time, roomName):
 	return (datetime.datetime.combine(date, time['time']), roomName)
 
 
-@prefix(r'查询预约|查询')
-@pattern(r'^#(date:date)')
+@prefix(r'x查询预约|x查询')
+@pattern(r'^#(date:date)|#(week:week)')
 #只匹配前缀，可以有多余后缀，例如“查询明天下午，查询明天的预约，等等
-def query(result, date):
-	return (datetime.datetime.combine(date, datetime.time()),
-			datetime.datetime.combine(date+datetime.timedelta(days=1), datetime.time()))
+def query(result, date, week):
+	if date is not None:
+		return (toDatetime(date), toDatetime(date+datetime.timedelta(days=1)))
+
+	return (toDatetime(max(currentDate(), week[0])), toDatetime(week[1]))
 
 
 @prefix(r'查询我的预约')
@@ -138,18 +141,33 @@ def absDate(result, year, month, day):
 		raise MyValueError(result)
 
 
-@pattern(r'下*(?:星期|礼拜|周)#(weekNum:weekNum)')
-def weekDate(result, weekNum):
+@pattern(r'#(weekCount:weekCount)(?:星期|礼拜|周)')
+def week(result, weekCount):
+	date = currentDate()
+	if weekCount is not None:
+		date -= datetime.timedelta(days=date.weekday())
+		for i in range(weekCount):
+			date += datetime.timedelta(days=7-date.weekday())
+	return (date, date + datetime.timedelta(days=7-date.weekday()))
+
+
+@pattern(r'#(week:week)#(weekNum:weekNum)')
+def weekDate(result, week, weekNum):
 	"""
 	例：下下下周二
 	如果没有“下”且weekNum小于当前周内数，则视为下周
 	"""
-	date = currentDate()
-	for ch in result:
-		if ch != '下': break
-		date += datetime.timedelta(days=7-date.weekday())
-	date += datetime.timedelta(days=(weekNum-date.weekday()+7)%7)
+	date = week[0] + datetime.timedelta(days=(weekNum-week[0].weekday()+7)%7)
+	if date < currentDate():
+		raise MyValueError(result)
 	return date
+
+
+@pattern(r'这|本|下*')
+def weekCount(result):
+	if len(result) == 0:
+		return None
+	return result.count('下')
 
 
 @pattern(r'#(number:number)|[日天]')
@@ -274,9 +292,6 @@ def chineseNumber(result):
 	return digits[0]*10+digits[1]
 
 
-def currentDate():
-	return datetime.datetime.now().date()
-
 
 class MyValueError(ValueError):
 	def __init__(self, msg):
@@ -288,7 +303,7 @@ if __name__=='__main__':
 	import re
 	#s = cancellation('取消预约三十号七点半到九点三刻')
 	#s = query('查询明天晚上')
-	s = iAm('我是3')
+	s = week('这周')
 	#s = roomName('B252')
 	print(s)
 	#for k,v in processor.ExtPattern.collection.iteritems():
