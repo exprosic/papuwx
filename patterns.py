@@ -61,7 +61,7 @@ def cancellation(result, date, time, roomName):
 	return (datetime.datetime.combine(date, time['time']), roomName)
 
 
-@prefix(r'查询预约|x查询')
+@prefix(r'查询预约|查询')
 @pattern(r'^#(date:date)|#(week:week)')
 #只匹配前缀，可以有多余后缀，例如“查询明天下午，查询明天的预约，等等
 def query(result, date, week):
