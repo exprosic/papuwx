@@ -542,8 +542,9 @@ def processQuery(start, end):
 
 	if len(result)==0:
 		intervalRepr = formatDate(start.date())
-		if end.date()-start.date() != datetime.timedelta(days=1):
-			intervalRepr += '至' + formatDate(end.date())
+		end0 = end.date() - datetime.timedelta(days=1)
+		if start.date() != end0:
+			intervalRepr += '至' + formatDate(end0)
 		return '{}没有预约'.format(intervalRepr)
 
 	if hasCourse:
