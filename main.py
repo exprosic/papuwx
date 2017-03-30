@@ -221,6 +221,7 @@ def toEtree(d, name='xml'):
 
 def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 	g.openId = FromUserName
+	Content = Content or Recognition
 	try:
 		for function in processText.functions:
 			replyDict = function(Content)
