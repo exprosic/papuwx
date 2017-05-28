@@ -19,7 +19,7 @@ from sqlalchemy.exc import IntegrityError
 
 import patterns
 import music
-from utils import *
+from utils import currentDate, toDatetime
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db'
@@ -227,11 +227,12 @@ def processText(ToUserName, FromUserName, CreateTime, Content, Recognition):
 			replyDict = function(Content)
 			if replyDict is not None: break
 		else:
-			if random.randrange(6)==0:
-				replyDict = dict(MsgType='text',
-						Content=randomEmojiLink())
-			else:
-				replyDict = recommendMusic()
+			replyDict = dict(MsgType='text', Content=randomEmoji())
+			#if random.randrange(6)==0:
+			#	replyDict = dict(MsgType='text',
+			#			Content=randomEmojiLink())
+			#else:
+			#	replyDict = recommendMusic()
 	except MyException as e:
 		replyDict = dict(MsgType='text', Content=e.args[0])
 

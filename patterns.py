@@ -5,7 +5,7 @@ import re
 import datetime
 
 from processor import pattern
-from utils import *
+from utils import currentDate, toDatetime
 
 
 def prefix(prefixPat):
